@@ -111,6 +111,36 @@ int main(void) {
     printf("\n--- RELATORIO FINAL ATUALIZADO ---\n");
     imprimir_metricas(&metricas);
 
+    // TESTE 6: Fragmentacao interna media
+printf("\n--- TESTE 6: FRAGMENTACAO INTERNA ---\n");
+
+bool frag_ok = true;
+
+frag_ok = frag_ok && registrar_fragmentacao(&metricas, 4096, 1024);
+frag_ok = frag_ok && registrar_fragmentacao(&metricas, 8192, 1024);
+frag_ok = frag_ok && registrar_fragmentacao(&metricas, 8192, 4096);
+
+if (!frag_ok) {
+    printf("TESTE 6 FALHOU: erro ao registrar amostras!\n");
+    liberar_metricas(&metricas);
+    return 1;
+}
+
+double media = metricas.soma_fragmentacao /
+              metricas.amostras_fragmentacao;
+
+printf("Fragmentacao media: %.2f%%\n", media);
+
+if (media > 70.82 && media < 70.84) {
+    printf("TESTE 6 APROVADO!\n");
+} else {
+    printf("TESTE 6 FALHOU!\n");
+    liberar_metricas(&metricas);
+    return 1;
+}
+
+imprimir_metricas(&metricas);
+
     // Liberar memoria alocada
     liberar_metricas(&metricas);
 
