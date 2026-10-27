@@ -19,10 +19,8 @@ uint64_t calcular_checksum(
         hash ^= tabela[i].present ? 1ULL : 0ULL;
         hash *= 1099511628211ULL;
 
-        if (tabela[i].present) {
-            hash ^= tabela[i].frame_number;
-            hash *= 1099511628211ULL;
-        }
+        hash ^= tabela[i].frame_number;
+        hash *= 1099511628211ULL;
     }
 
     return hash;

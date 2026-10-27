@@ -16,19 +16,54 @@ int main(void) {
 
     printf("Checksum inicial: %" PRIu64 "\n", hash1);
 
-    // Simulando alteracao na tabela
+    // TESTE 1: Alterar o numero do frame
     tabela[1].frame_number = 7;
 
     uint64_t hash2 = calcular_checksum(tabela, 3);
 
-    printf("Checksum atualizado: %" PRIu64 "\n", hash2);
-
     if (hash1 != hash2) {
-        printf("TESTE APROVADO: alteracao detectada!\n");
+        printf("TESTE 1 APROVADO: alteracao do frame detectada!\n");
     } else {
-        printf("TESTE FALHOU: alteracao nao detectada.\n");
+        printf("TESTE 1 FALHOU!\n");
         return 1;
     }
+
+    // TESTE 2: Alterar o bit present
+    tabela[2].present = true;
+    tabela[2].frame_number = 9;
+
+    uint64_t hash3 = calcular_checksum(tabela, 3);
+
+    if (hash2 != hash3) {
+        printf("TESTE 2 APROVADO: nova pagina detectada!\n");
+    } else {
+        printf("TESTE 2 FALHOU!\n");
+        return 1;
+    }
+
+    // TESTE 3: Remover uma pagina da RAM
+    tabela[2].present = false;
+
+    uint64_t hash4 = calcular_checksum(tabela, 3);
+
+    if (hash3 != hash4) {
+        printf("TESTE 3 APROVADO: remocao detectada!\n");
+    } else {
+        printf("TESTE 3 FALHOU!\n");
+        return 1;
+    }
+
+    // TESTE 4: Verificar estabilidade do checksum
+    uint64_t hash5 = calcular_checksum(tabela, 3);
+
+    if (hash4 == hash5) {
+        printf("TESTE 4 APROVADO: checksum consistente!\n");
+    } else {
+        printf("TESTE 4 FALHOU!\n");
+        return 1;
+    }
+
+    printf("\nTODOS OS TESTES FORAM APROVADOS!\n");
 
     return 0;
 }
