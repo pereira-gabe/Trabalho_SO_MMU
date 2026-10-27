@@ -16,4 +16,12 @@ void registrar_auditoria(
     const char *evento
 );
 
+void auditar_fading(
+    const page_table_entry_t *antes,
+    const page_table_entry_t *depois,
+    uint32_t quantidade_paginas,
+    uint32_t pid,
+    uint64_t acessos_globais
+);
+
 #endif
