@@ -20,6 +20,8 @@ typedef struct {
     size_t capacidade_processos;
     float temperatura_maxima;
     uint64_t ciclos_io;
+    double soma_fragmentacao;
+    uint64_t amostras_fragmentacao;
 } Metricas;
 
 void inicializar_metricas(Metricas *metricas);
@@ -38,6 +40,12 @@ bool registrar_operacao_swap(
     Metricas *metricas,
     const hardware_state_t *estado_antes,
     const hardware_state_t *estado_depois
+);
+
+bool registrar_fragmentacao(
+    Metricas *metricas,
+    uint32_t bytes_alocados,
+    uint32_t bytes_utilizados
 );
 
 #endif

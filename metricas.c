@@ -1,8 +1,10 @@
+
 #include "metricas.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <inttypes.h>
 
+// Inicializa as estatisticas
 void inicializar_metricas(Metricas *metricas) {
     if (metricas == NULL) {
         return;
@@ -12,6 +14,7 @@ void inicializar_metricas(Metricas *metricas) {
     metricas->temperatura_maxima = BASE_SWAP_TEMP;
 }
 
+// Registra um acesso a memoria
 bool registrar_acesso(
     Metricas *metricas,
     uint32_t pid,
@@ -69,6 +72,64 @@ bool registrar_acesso(
     return true;
 }
 
+// Registra temperatura e ciclos de uma operacao de Swap
+bool registrar_operacao_swap(
+    Metricas *metricas,
+    const hardware_state_t *estado_antes,
+    const hardware_state_t *estado_depois
+) {
+    if (metricas == NULL ||
+        estado_antes == NULL ||
+        estado_depois == NULL) {
+        return false;
+    }
+
+    if (estado_depois->total_cpu_cycles <
+        estado_antes->total_cpu_cycles) {
+        return false;
+    }
+
+    uint64_t custo =
+        estado_depois->total_cpu_cycles -
+        estado_antes->total_cpu_cycles;
+
+    metricas->ciclos_io += custo;
+
+    // Atualiza a temperatura maxima
+    if (estado_depois->swap_temperature >
+        metricas->temperatura_maxima) {
+
+        metricas->temperatura_maxima =
+            estado_depois->swap_temperature;
+    }
+
+    return true;
+}
+
+// Registra uma amostra de fragmentacao interna
+bool registrar_fragmentacao(
+    Metricas *metricas,
+    uint32_t bytes_alocados,
+    uint32_t bytes_utilizados
+) {
+    if (metricas == NULL ||
+        bytes_alocados == 0 ||
+        bytes_alocados > PHYSICAL_RAM_SIZE ||
+        bytes_utilizados > bytes_alocados) {
+        return false;
+    }
+
+    double fragmentacao =
+        100.0 * (bytes_alocados - bytes_utilizados)
+        / bytes_alocados;
+
+    metricas->soma_fragmentacao += fragmentacao;
+    metricas->amostras_fragmentacao++;
+
+    return true;
+}
+
+// Imprime as estatisticas finais
 void imprimir_metricas(const Metricas *metricas) {
     if (metricas == NULL) {
         return;
@@ -94,13 +155,29 @@ void imprimir_metricas(const Metricas *metricas) {
     }
 
     printf("\nTemperatura maxima do Swap: %.2f C\n",
-       metricas->temperatura_maxima);
+           metricas->temperatura_maxima);
 
     printf("Ciclos desperdicados em E/S: %" PRIu64 "\n",
-       metricas->ciclos_io);
+           metricas->ciclos_io);
 
+    // Calcula e imprime a fragmentacao media
+    if (metricas->amostras_fragmentacao > 0) {
+
+        double media =
+            metricas->soma_fragmentacao /
+            metricas->amostras_fragmentacao;
+
+        printf("Fragmentacao interna media: %.2f%%\n",
+               media);
+
+    } else {
+        printf("Fragmentacao interna media: sem amostras\n");
+    }
+
+    printf("==============================\n");
 }
 
+// Libera a memoria alocada
 void liberar_metricas(Metricas *metricas) {
     if (metricas == NULL) {
         return;
@@ -108,35 +185,4 @@ void liberar_metricas(Metricas *metricas) {
 
     free(metricas->processos);
     *metricas = (Metricas){0};
-}
-
-bool registrar_operacao_swap(
-    Metricas *metricas,
-    const hardware_state_t *estado_antes,
-    const hardware_state_t *estado_depois
-) {
-    if (metricas == NULL ||
-        estado_antes == NULL ||
-        estado_depois == NULL) {
-        return false;
-    }
-
-    if (estado_depois->total_cpu_cycles <
-        estado_antes->total_cpu_cycles) {
-        return false;
-    }
-
-    uint64_t custo =
-        estado_depois->total_cpu_cycles -
-        estado_antes->total_cpu_cycles;
-
-    metricas->ciclos_io += custo;
-
-    if (estado_depois->swap_temperature >
-        metricas->temperatura_maxima) {
-        metricas->temperatura_maxima =
-            estado_depois->swap_temperature;
-    }
-
-    return true;
 }
