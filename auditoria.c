@@ -1,4 +1,6 @@
 #include "auditoria.h"
+#include <stdio.h>
+#include <inttypes.h>
 #include <stddef.h>
 
 uint64_t calcular_checksum(
@@ -24,4 +26,23 @@ uint64_t calcular_checksum(
     }
 
     return hash;
+}
+
+void registrar_auditoria(
+    const page_table_entry_t *tabela,
+    uint32_t quantidade_paginas,
+    uint32_t pid,
+    const char *evento
+) {
+    if (tabela == NULL) {
+        printf("[AUDITORIA] Erro: tabela invalida.\n");
+        return;
+    }
+
+    uint64_t hash = calcular_checksum(tabela, quantidade_paginas);
+
+    printf("\n[AUDITORIA] PID: %" PRIu32 "\n", pid);
+    printf("[AUDITORIA] Evento: %s\n",
+           evento != NULL ? evento : "Nao informado");
+    printf("[AUDITORIA] Checksum: %" PRIu64 "\n", hash);
 }

@@ -9,4 +9,11 @@ uint64_t calcular_checksum(
     uint32_t quantidade_paginas
 );
 
+void registrar_auditoria(
+    const page_table_entry_t *tabela,
+    uint32_t quantidade_paginas,
+    uint32_t pid,
+    const char *evento
+);
+
 #endif

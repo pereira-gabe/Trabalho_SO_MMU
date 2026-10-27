@@ -63,6 +63,28 @@ int main(void) {
         return 1;
     }
 
+// TESTE 5: Verificar os logs de auditoria
+
+printf("\n--- TESTE 5: LOGS DE AUDITORIA ---\n");
+
+registrar_auditoria(tabela, 3, 1, "Estado inicial");
+
+uint64_t hash_antes = calcular_checksum(tabela, 3);
+
+// Simulando uma alteracao na tabela
+tabela[0].frame_number = 5;
+
+registrar_auditoria(tabela, 3, 1, "Frame da pagina 0 alterado");
+
+uint64_t hash_depois = calcular_checksum(tabela, 3);
+
+if (hash_antes != hash_depois) {
+    printf("TESTE 5 APROVADO: checksums diferentes!\n");
+} else {
+    printf("TESTE 5 FALHOU!\n");
+    return 1;
+}
+
     printf("\nTODOS OS TESTES FORAM APROVADOS!\n");
 
     return 0;
