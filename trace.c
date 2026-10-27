@@ -108,7 +108,7 @@ bool interpretar_linha_trace(
     return true;
 }
 
-
+// Abre e processa o arquivo de trace linha por linha
 bool processar_arquivo_trace(
     const char *caminho,
     ProcessadorTrace processar,
@@ -142,11 +142,17 @@ bool processar_arquivo_trace(
         if (tamanho == sizeof(linha) - 1 &&
             linha[tamanho - 1] != '\n') {
 
-            printf("ERRO: linha %zu muito longa.\n",
-                   numero_linha);
+            // Verifica se existem caracteres adicionais
+            int proximo = fgetc(arquivo);
 
-            fclose(arquivo);
-            return false;
+            if (proximo != EOF && proximo != '\n') {
+
+                printf("ERRO: linha %zu muito longa.\n",
+                       numero_linha);
+
+                fclose(arquivo);
+                return false;
+            }
         }
 
         // Ignora linhas vazias
@@ -162,6 +168,7 @@ bool processar_arquivo_trace(
 
         AcessoMemoria acesso;
 
+        // Interpreta os dados da linha
         if (!interpretar_linha_trace(linha, &acesso)) {
 
             printf("ERRO: linha %zu invalida.\n",
@@ -184,6 +191,7 @@ bool processar_arquivo_trace(
         (*total_processado)++;
     }
 
+    // Verifica se ocorreu algum erro de leitura
     if (ferror(arquivo)) {
         printf("ERRO: falha na leitura do arquivo.\n");
         fclose(arquivo);
@@ -193,4 +201,3 @@ bool processar_arquivo_trace(
     fclose(arquivo);
     return true;
 }
-
