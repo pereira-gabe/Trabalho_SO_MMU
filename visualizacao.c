@@ -5,6 +5,21 @@
 #include <stdio.h>
 #include <inttypes.h>
 
+// Verifica se a VPN inteira cabe no espaco virtual assimetrico.
+static bool vpn_valida(uint32_t vpn) {
+    uint64_t inicio = (uint64_t)(vpn / 2) *
+                      (PAGE_SIZE_EVEN + PAGE_SIZE_ODD);
+
+    if (vpn % 2 != 0) {
+        inicio += PAGE_SIZE_EVEN;
+    }
+
+    uint64_t tamanho = (vpn % 2 == 0)
+                       ? PAGE_SIZE_EVEN : PAGE_SIZE_ODD;
+
+    return inicio + tamanho <= VIRTUAL_MEMORY_SIZE;
+}
+
 // Calcula a fragmentacao interna de uma pagina
 bool calcular_fragmentacao_pagina(
     uint32_t vpn,
@@ -15,6 +30,7 @@ bool calcular_fragmentacao_pagina(
         (vpn % 2 == 0) ? PAGE_SIZE_EVEN : PAGE_SIZE_ODD;
 
     if (percentual == NULL ||
+        !vpn_valida(vpn) ||
         bytes_utilizados > tamanho_pagina) {
         return false;
     }
@@ -79,6 +95,10 @@ bool exibir_mapa_ram_ascii(
     for (size_t i = 0; i < quantidade_blocos; i++) {
 
         if (ram[i].bytes_utilizados > PAGE_SIZE_EVEN) {
+            return false;
+        }
+
+        if (ram[i].ocupado && !vpn_valida(ram[i].vpn)) {
             return false;
         }
 

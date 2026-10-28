@@ -28,6 +28,32 @@ uint64_t calcular_checksum(
     return hash;
 }
 
+// Checksum adicional do estado completo da tabela.
+// Mantem o checksum estrutural original para compatibilidade.
+uint64_t calcular_checksum_estado(
+    const page_table_entry_t *tabela,
+    uint32_t quantidade_paginas
+) {
+    if (tabela == NULL) {
+        return 0;
+    }
+
+    uint64_t hash = calcular_checksum(tabela, quantidade_paginas);
+
+    for (uint32_t i = 0; i < quantidade_paginas; i++) {
+        hash ^= tabela[i].referenced ? 1ULL : 0ULL;
+        hash *= 1099511628211ULL;
+
+        hash ^= tabela[i].modified ? 1ULL : 0ULL;
+        hash *= 1099511628211ULL;
+
+        hash ^= tabela[i].last_access_t;
+        hash *= 1099511628211ULL;
+    }
+
+    return hash;
+}
+
 void registrar_auditoria(
     const page_table_entry_t *tabela,
     uint32_t quantidade_paginas,
@@ -44,7 +70,9 @@ void registrar_auditoria(
     printf("\n[AUDITORIA] PID: %" PRIu32 "\n", pid);
     printf("[AUDITORIA] Evento: %s\n",
            evento != NULL ? evento : "Nao informado");
-    printf("[AUDITORIA] Checksum: %" PRIu64 "\n", hash);
+    printf("[AUDITORIA] Checksum estrutural: %" PRIu64 "\n", hash);
+    printf("[AUDITORIA] Checksum estado: %" PRIu64 "\n",
+           calcular_checksum_estado(tabela, quantidade_paginas));
 }
 
 
@@ -97,8 +125,10 @@ void auditar_fading(
     uint64_t checksum =
         calcular_checksum(depois, quantidade_paginas);
 
-    printf("[AUDITORIA] Checksum: %" PRIu64 "\n",
+    printf("[AUDITORIA] Checksum estrutural: %" PRIu64 "\n",
            checksum);
+    printf("[AUDITORIA] Checksum estado: %" PRIu64 "\n",
+           calcular_checksum_estado(depois, quantidade_paginas));
 
     printf("====================================\n");
 }

@@ -157,7 +157,7 @@ void imprimir_metricas(const Metricas *metricas) {
     printf("\nTemperatura maxima do Swap: %.2f C\n",
            metricas->temperatura_maxima);
 
-    printf("Ciclos desperdicados em E/S: %" PRIu64 "\n",
+    printf("Ciclos gastos em E/S: %" PRIu64 "\n",
            metricas->ciclos_io);
 
     // Calcula e imprime a fragmentacao media

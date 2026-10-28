@@ -129,31 +129,67 @@ bool processar_arquivo_trace(
         return false;
     }
 
-    char linha[256];
+    // 255 caracteres de conteudo + CR opcional + terminador NUL.
+    // A leitura caractere a caractere tambem detecta bytes NUL no arquivo.
+    char linha[258];
     size_t numero_linha = 0;
 
-    while (fgets(linha, sizeof(linha), arquivo) != NULL) {
+    while (true) {
+
+        size_t tamanho = 0;
+        bool linha_longa = false;
+        bool byte_nulo = false;
+        bool iniciou_linha = false;
+        int caractere;
+
+        // Le ate a quebra de linha ou o fim do arquivo sem estourar o buffer.
+        while ((caractere = fgetc(arquivo)) != EOF &&
+               caractere != '\n') {
+
+            iniciou_linha = true;
+
+            if (caractere == '\0') {
+                byte_nulo = true;
+            }
+
+            if (tamanho < sizeof(linha) - 1) {
+                linha[tamanho++] = (char)caractere;
+            } else {
+                linha_longa = true;
+            }
+        }
+
+        // Nao ha nova linha a processar depois do ultimo EOF.
+        if (!iniciou_linha && caractere == EOF) {
+            break;
+        }
 
         numero_linha++;
 
-        // Detecta linhas maiores que o buffer
-        size_t tamanho = strlen(linha);
-
-        if (tamanho == sizeof(linha) - 1 &&
-            linha[tamanho - 1] != '\n') {
-
-            // Verifica se existem caracteres adicionais
-            int proximo = fgetc(arquivo);
-
-            if (proximo != EOF && proximo != '\n') {
-
-                printf("ERRO: linha %zu muito longa.\n",
-                       numero_linha);
-
-                fclose(arquivo);
-                return false;
-            }
+        if (ferror(arquivo)) {
+            printf("ERRO: falha na leitura do arquivo.\n");
+            fclose(arquivo);
+            return false;
         }
+
+        // Suporta terminacao CRLF, inclusive no limite de 255 caracteres.
+        if (tamanho > 0 && linha[tamanho - 1] == '\r') {
+            tamanho--;
+        }
+
+        if (linha_longa || tamanho > 255) {
+            printf("ERRO: linha %zu muito longa.\n", numero_linha);
+            fclose(arquivo);
+            return false;
+        }
+
+        if (byte_nulo) {
+            printf("ERRO: linha %zu contem byte NUL.\n", numero_linha);
+            fclose(arquivo);
+            return false;
+        }
+
+        linha[tamanho] = '\0';
 
         // Ignora linhas vazias
         const char *inicio = linha;
