@@ -1,3 +1,4 @@
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -23,9 +24,12 @@ typedef struct {
     ProcessoMemoria processos[MAX_PROCESSOS_SIMULADOS];
     page_table_entry_t tabelas[MAX_PROCESSOS_SIMULADOS][TOTAL_PAGINAS_VIRTUAIS];
     size_t quantidade_processos;
+
+    // Habilita pausa a cada 10 acessos
+    bool pausar_mapas;
 } ContextoSimulador;
 
-// Traduz um endereco virtual (0 a 1048575) em VPN e Offset respeitando a paginacao assimetrica
+// Traduz um endereco virtual considerando a paginacao assimetrica
 static bool traduzir_endereco_assimetrico(
     uint32_t endereco_virtual,
     uint32_t *vpn,
@@ -36,7 +40,7 @@ static bool traduzir_endereco_assimetrico(
         return false;
     }
 
-    uint32_t tamanho_par = PAGE_SIZE_EVEN + PAGE_SIZE_ODD; // 12288 bytes
+    uint32_t tamanho_par = PAGE_SIZE_EVEN + PAGE_SIZE_ODD;
     uint32_t indice_par = endereco_virtual / tamanho_par;
     uint32_t resto = endereco_virtual % tamanho_par;
 
@@ -67,6 +71,7 @@ static ProcessoMemoria *obter_ou_criar_processo(
     }
 
     size_t idx = sim->quantidade_processos++;
+
     memset(sim->tabelas[idx], 0, sizeof(sim->tabelas[idx]));
 
     sim->processos[idx].pid = pid;
@@ -76,33 +81,54 @@ static ProcessoMemoria *obter_ou_criar_processo(
     return &sim->processos[idx];
 }
 
-// Callback invocado para cada linha valida lida por processar_arquivo_trace()
+// Pausa a execucao para permitir inspecionar o mapa da RAM
+static void pausar_para_inspecao(void) {
+    printf("\n[SIMULADOR] Pressione ENTER para continuar...");
+    fflush(stdout);
+
+    int caractere;
+
+    do {
+        caractere = getchar();
+    } while (caractere != '\n' && caractere != EOF);
+
+    printf("\n");
+}
+
+// Processa cada acesso recebido do arquivo de trace
 static bool processar_acesso_simulacao(
     const AcessoMemoria *acesso,
     void *contexto
 ) {
     ContextoSimulador *sim = contexto;
+
     if (acesso == NULL || sim == NULL) {
         return false;
     }
 
-    uint32_t vpn = 0, offset = 0;
-    if (!traduzir_endereco_assimetrico(acesso->endereco, &vpn, &offset)) {
+    uint32_t vpn = 0;
+    uint32_t offset = 0;
+
+    if (!traduzir_endereco_assimetrico(
+            acesso->endereco, &vpn, &offset)) {
         return false;
     }
 
-    ProcessoMemoria *proc = obter_ou_criar_processo(sim, acesso->pid);
+    ProcessoMemoria *proc =
+        obter_ou_criar_processo(sim, acesso->pid);
+
     if (proc == NULL) {
         return false;
     }
 
-    // Salva copia da tabela antes do acesso para auditar possivel Fading do bit R
+    // Salva o estado anterior para auditar o Fading
     page_table_entry_t antes[TOTAL_PAGINAS_VIRTUAIS];
+
     memcpy(antes, proc->tabela, sizeof(antes));
 
     bool escrita = (acesso->operacao == 'W');
 
-    // Consulta a MMU fisica do hardware
+    // Consulta a MMU original do hardware
     bool hit = mmu_access_memory(
         &sim->hardware,
         proc->tabela,
@@ -112,7 +138,7 @@ static bool processar_acesso_simulacao(
         acesso->timestamp
     );
 
-    // Audita se houve Fading do bit R neste acesso global (multiplo de 5)
+    // Audita possiveis eventos de Fading do bit R
     auditar_fading(
         antes,
         proc->tabela,
@@ -121,21 +147,29 @@ static bool processar_acesso_simulacao(
         sim->hardware.global_access_count
     );
 
-    // Registra o acesso e se ocorreu Page Fault nas metricas
-    if (!registrar_acesso(&sim->metricas, acesso->pid, !hit)) {
+    // Registra acesso e possivel Page Fault
+    if (!registrar_acesso(
+            &sim->metricas,
+            acesso->pid,
+            !hit)) {
         return false;
     }
 
-    // Estima bytes utilizados na pagina a partir do offset acessado (minimo 1024 B)
-    uint32_t tamanho_pagina = (vpn % 2U == 0U) ? PAGE_SIZE_EVEN : PAGE_SIZE_ODD;
+    // Estima a quantidade de bytes utilizados na pagina
+    uint32_t tamanho_pagina =
+        (vpn % 2U == 0U) ? PAGE_SIZE_EVEN : PAGE_SIZE_ODD;
+
     uint32_t bytes_usados = offset + 1U;
+
     if (bytes_usados < 1024U) {
         bytes_usados = 1024U;
     }
+
     if (bytes_usados > tamanho_pagina) {
         bytes_usados = tamanho_pagina;
     }
-    // Se ocorreu Page Fault, aciona o tratador WSClock
+
+    // Trata Page Fault por meio do WSClock
     if (!hit) {
         ResultadoSubstituicao resultado = {0};
 
@@ -158,32 +192,40 @@ static bool processar_acesso_simulacao(
         }
 
     } else {
-        // Em um hit, atualiza a estimativa de bytes utilizados
-        // da pagina que ja esta carregada na RAM.
+        // Atualiza a estimativa de utilizacao da pagina
+        // quando ela ja esta presente na RAM
 
-        size_t frame_inicial = proc->tabela[vpn].frame_number;
-        size_t quantidade_frames = tamanho_pagina / PAGE_SIZE_EVEN;
+        size_t frame_inicial =
+            proc->tabela[vpn].frame_number;
 
-        // Valida os limites fisicos da pagina
+        size_t quantidade_frames =
+            tamanho_pagina / PAGE_SIZE_EVEN;
+
+        // Verifica os limites dos frames fisicos
         if (frame_inicial >= TOTAL_BLOCOS_RAM ||
             quantidade_frames > TOTAL_BLOCOS_RAM - frame_inicial) {
+
             printf("ERRO: mapeamento de RAM invalido.\n");
             return false;
         }
 
         for (size_t i = 0; i < quantidade_frames; i++) {
 
-            BlocoRamVisual *bloco = &sim->ram[frame_inicial + i];
+            BlocoRamVisual *bloco =
+                &sim->ram[frame_inicial + i];
 
-            // Verifica se o bloco pertence a pagina acessada
+            // Confere a identidade da pagina
             if (!bloco->ocupado ||
                 bloco->pid != acesso->pid ||
                 bloco->vpn != vpn) {
+
                 printf("ERRO: inconsistencia no mapa da RAM.\n");
                 return false;
             }
 
-            uint32_t inicio_bloco = (uint32_t)i * PAGE_SIZE_EVEN;
+            uint32_t inicio_bloco =
+                (uint32_t)i * PAGE_SIZE_EVEN;
+
             uint32_t novos_bytes = 0;
 
             if (bytes_usados > inicio_bloco) {
@@ -194,34 +236,45 @@ static bool processar_acesso_simulacao(
                 novos_bytes = PAGE_SIZE_EVEN;
             }
 
-            // Nunca reduz a utilizacao ja registrada
+            // Nunca reduz os bytes ja contabilizados
             if (novos_bytes > bloco->bytes_utilizados) {
                 bloco->bytes_utilizados = novos_bytes;
             }
         }
     }
 
-
-    // A cada 10 linhas processadas, exibe o Mapa ASCII e registra amostra de fragmentacao
+    // Exibe o mapa e registra fragmentacao a cada 10 acessos
     if (sim->metricas.total_acessos % 10ULL == 0ULL) {
-        if (!exibir_mapa_ram_ascii(sim->ram, TOTAL_BLOCOS_RAM)) {
+
+        if (!exibir_mapa_ram_ascii(
+                sim->ram, TOTAL_BLOCOS_RAM)) {
             return false;
         }
 
         uint32_t bytes_alocados = 0;
         uint32_t bytes_utilizados = 0;
+
         for (size_t i = 0; i < TOTAL_BLOCOS_RAM; i++) {
+
             if (sim->ram[i].ocupado) {
                 bytes_alocados += PAGE_SIZE_EVEN;
-                bytes_utilizados += sim->ram[i].bytes_utilizados;
+                bytes_utilizados +=
+                    sim->ram[i].bytes_utilizados;
             }
         }
 
         if (bytes_alocados > 0) {
             if (!registrar_fragmentacao(
-                    &sim->metricas, bytes_alocados, bytes_utilizados)) {
+                    &sim->metricas,
+                    bytes_alocados,
+                    bytes_utilizados)) {
                 return false;
             }
+        }
+
+        // Pausa opcional para inspecionar o mapa
+        if (sim->pausar_mapas) {
+            pausar_para_inspecao();
         }
     }
 
@@ -229,34 +282,82 @@ static bool processar_acesso_simulacao(
 }
 
 int main(int argc, char *argv[]) {
-    const char *caminho_trace = (argc > 1) ? argv[1] : "memory_trace.txt";
 
-    ContextoSimulador *sim = calloc(1, sizeof(ContextoSimulador));
+    const char *caminho_trace = "memory_trace.txt";
+    bool pausar_mapas = false;
+    bool caminho_informado = false;
+
+    // Interpreta os argumentos da linha de comando
+    for (int i = 1; i < argc; i++) {
+
+        if (strcmp(argv[i], "--pause") == 0) {
+
+            if (pausar_mapas) {
+                printf("ERRO: --pause informado mais de uma vez.\n");
+                return 1;
+            }
+
+            pausar_mapas = true;
+
+        } else if (!caminho_informado && argv[i][0] != '-') {
+
+            caminho_trace = argv[i];
+            caminho_informado = true;
+
+        } else {
+
+            printf("Uso: %s [arquivo_trace] [--pause]\n",
+                   argv[0]);
+
+            return 1;
+        }
+    }
+
+    // Aloca o contexto do simulador
+    ContextoSimulador *sim =
+        calloc(1, sizeof(ContextoSimulador));
+
     if (sim == NULL) {
         printf("ERRO: falha ao alocar memoria para o simulador.\n");
         return 1;
     }
 
+    // Define se a pausa esta habilitada
+    sim->pausar_mapas = pausar_mapas;
+
+    // Inicializa hardware, metricas e WSClock
     srand(1234);
+
     hardware_init(&sim->hardware);
+
     inicializar_metricas(&sim->metricas);
-    inicializar_substituicao(&sim->substituicao, WSCLOCK_TAU_PADRAO, true);
+
+    inicializar_substituicao(
+        &sim->substituicao,
+        WSCLOCK_TAU_PADRAO,
+        true
+    );
 
     size_t total_processado = 0;
 
+    // Processa o arquivo de trace
     if (!processar_arquivo_trace(
             caminho_trace,
             processar_acesso_simulacao,
             sim,
             &total_processado)) {
+
         liberar_metricas(&sim->metricas);
         free(sim);
         return 1;
     }
 
+    // Exibe as estatisticas finais
     imprimir_metricas(&sim->metricas);
 
+    // Libera os recursos alocados
     liberar_metricas(&sim->metricas);
     free(sim);
+
     return 0;
 }
