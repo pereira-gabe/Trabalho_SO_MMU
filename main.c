@@ -135,10 +135,10 @@ static bool processar_acesso_simulacao(
     if (bytes_usados > tamanho_pagina) {
         bytes_usados = tamanho_pagina;
     }
-
-    // Se ocorreu Page Fault, aciona o tratador WSClock da Parte 2
+    // Se ocorreu Page Fault, aciona o tratador WSClock
     if (!hit) {
         ResultadoSubstituicao resultado = {0};
+
         if (!tratar_page_fault_wsclock(
                 &sim->substituicao,
                 &sim->hardware,
@@ -156,7 +156,51 @@ static bool processar_acesso_simulacao(
                 &resultado)) {
             return false;
         }
+
+    } else {
+        // Em um hit, atualiza a estimativa de bytes utilizados
+        // da pagina que ja esta carregada na RAM.
+
+        size_t frame_inicial = proc->tabela[vpn].frame_number;
+        size_t quantidade_frames = tamanho_pagina / PAGE_SIZE_EVEN;
+
+        // Valida os limites fisicos da pagina
+        if (frame_inicial >= TOTAL_BLOCOS_RAM ||
+            quantidade_frames > TOTAL_BLOCOS_RAM - frame_inicial) {
+            printf("ERRO: mapeamento de RAM invalido.\n");
+            return false;
+        }
+
+        for (size_t i = 0; i < quantidade_frames; i++) {
+
+            BlocoRamVisual *bloco = &sim->ram[frame_inicial + i];
+
+            // Verifica se o bloco pertence a pagina acessada
+            if (!bloco->ocupado ||
+                bloco->pid != acesso->pid ||
+                bloco->vpn != vpn) {
+                printf("ERRO: inconsistencia no mapa da RAM.\n");
+                return false;
+            }
+
+            uint32_t inicio_bloco = (uint32_t)i * PAGE_SIZE_EVEN;
+            uint32_t novos_bytes = 0;
+
+            if (bytes_usados > inicio_bloco) {
+                novos_bytes = bytes_usados - inicio_bloco;
+            }
+
+            if (novos_bytes > PAGE_SIZE_EVEN) {
+                novos_bytes = PAGE_SIZE_EVEN;
+            }
+
+            // Nunca reduz a utilizacao ja registrada
+            if (novos_bytes > bloco->bytes_utilizados) {
+                bloco->bytes_utilizados = novos_bytes;
+            }
+        }
     }
+
 
     // A cada 10 linhas processadas, exibe o Mapa ASCII e registra amostra de fragmentacao
     if (sim->metricas.total_acessos % 10ULL == 0ULL) {
